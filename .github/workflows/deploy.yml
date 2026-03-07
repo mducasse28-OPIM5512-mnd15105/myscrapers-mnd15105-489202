@@ -1,4 +1,15 @@
-name: Deploy Scraper (CF Gen2 + Cloud Scheduler)
+name: Deploy Extractor
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latestname: Deploy Scraper (CF Gen2 + Cloud Scheduler)
 run-name: "Scraper deploy by ${{ github.actor }} • ${{ github.ref_name }}"
 
 on:
