@@ -1,19 +1,4 @@
-permissions:
-  contents: read
-  id-token: write
-  
-  name: Deploy Extractor
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  id-token: write
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latestname: Deploy Scraper (CF Gen2 + Cloud Scheduler)
+name: Deploy Scraper (CF Gen2 + Cloud Scheduler)
 run-name: "Scraper deploy by ${{ github.actor }} • ${{ github.ref_name }}"
 
 on:
@@ -22,12 +7,11 @@ on:
     paths:
       - 'cloud_function/scraper_cars/**'
       - '.github/workflows/deploy.yml'
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
-
 env:
   PROJECT_ID: ${{ vars.PROJECT_ID }}
   REGION: ${{ vars.REGION }}
