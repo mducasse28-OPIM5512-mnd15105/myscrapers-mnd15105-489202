@@ -1,4 +1,8 @@
-name: Deploy Extractor
+permissions:
+  contents: read
+  id-token: write
+  
+  name: Deploy Extractor
 
 on:
   workflow_dispatch:
