@@ -11,10 +11,6 @@ on:
       - '.github/workflows/deploy-extractor.yml'
   workflow_dispatch: {}
 
-permissions:
-  contents: read
-  id-token: write
-
 env:
   PROJECT_ID: ${{ vars.PROJECT_ID }}
   REGION: ${{ vars.REGION }}
