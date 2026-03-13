@@ -118,7 +118,11 @@ jobs:
             echo "::error::RUNTIME_SA is not set. Add repo variable RUNTIME_SA."
             exit 1
           fi
-
+          if [[ -z "${PROJECT_ID:-}" ]]; then
+            echo "::error::PROJECT_ID is not set."
+            exit 1
+          fi
+          
           PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
           SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
           echo "Scheduler agent: ${SCHED_AGENT}"
