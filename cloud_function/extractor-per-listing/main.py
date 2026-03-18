@@ -133,20 +133,43 @@ def parse_listing(text: str) -> dict:
     else:
         d["transmission"] = None
 
-    # -----------------------------
-    # New field: fuel_type
-    # -----------------------------
-    if re.search(r'\bdiesel\b', txt):
-        d["fuel_type"] = "diesel"
-    elif re.search(r'\belectric\b|\bev\b', txt):
-        d["fuel_type"] = "electric"
-    elif re.search(r'\bhybrid\b', txt):
+   # ---------------------------------
+    # Fuel type extraction
+    # ---------------------------------
+    if re.search(r"\bhydrogen\b|\bfuel cell\b|\bfcev\b", txt):
+        d["fuel_type"] = "hydrogen"
+    elif re.search(r"\bcng\b|\bcompressed natural gas\b", txt):
+        d["fuel_type"] = "cng"
+    elif re.search(r"\blpg\b|\bpropane\b|\bliquefied petroleum gas\b", txt):
+        d["fuel_type"] = "lpg"
+    elif re.search(r"\bflex fuel\b|\be85\b|\bethanol\b|\bffv\b", txt):
+        d["fuel_type"] = "flex_fuel"
+    elif re.search(r"\bplug[- ]in hybrid\b|\bphev\b|\bhybrid\b|\bgas\/electric\b|\belectric\/gas\b", txt):
         d["fuel_type"] = "hybrid"
-    elif re.search(r'\bgas\b|\bgasoline\b', txt):
+    elif re.search(r"\belectric\b|\bev\b|\bfully electric\b|\bbattery electric\b|\bbev\b", txt):
+        d["fuel_type"] = "electric"
+    elif re.search(r"\bdiesel\b|\bturbo diesel\b|\btdi\b|\bpowerstroke\b|\bcummins\b|\bduramax\b", txt):
+        d["fuel_type"] = "diesel"
+    elif re.search(r"\bgasoline\b|\bgas\b|\bpetrol\b|\bunleaded\b", txt):
         d["fuel_type"] = "gasoline"
     else:
         d["fuel_type"] = None
 
+    # ---------------------------------
+    # Drivetrain extraction
+    # ---------------------------------
+    if re.search(r"\b4wd\b|\b4x4\b|\bfour wheel drive\b|\bfour-wheel drive\b", txt):
+        d["drivetrain"] = "4wd"
+    elif re.search(r"\bawd\b|\ball wheel drive\b|\ball-wheel drive\b", txt):
+        d["drivetrain"] = "awd"
+    elif re.search(r"\bfwd\b|\bfront wheel drive\b|\bfront-wheel drive\b", txt):
+        d["drivetrain"] = "fwd"
+    elif re.search(r"\brwd\b|\brear wheel drive\b|\brear-wheel drive\b", txt):
+        d["drivetrain"] = "rwd"
+    else:
+        d["drivetrain"] = None
+
+    return d
     # -----------------------------
     # New field: num_doors
     # -----------------------------
