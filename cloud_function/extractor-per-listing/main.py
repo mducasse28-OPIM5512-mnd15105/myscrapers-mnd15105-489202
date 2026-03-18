@@ -108,27 +108,63 @@ def _parse_run_id_as_iso(run_id: str) -> str:
         return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 # -------------------- PARSE A LISTING --------------------
+import re
+
 def parse_listing(text: str) -> dict:
     d = {}
 
-    m = PRICE_RE.search(text)
-    if m:
-        try:
-            d["price"] = int(m.group(1).replace(",", ""))
-        except ValueError:
-            pass
+    if not text:
+        return d
 
-    y = YEAR_RE.search(text)
-    if y:
-        try:
-            d["year"] = int(y.group(0))
-        except ValueError:
-            pass
+    txt = text.lower()
 
-    mm = MAKE_MODEL_RE.search(text)
-    if mm:
-        d["make"] = mm.group(1)
-        d["model"] = mm.group(2)
+    # -----------------------------
+    # Existing logic
+    # -----------------------------
+    # price, year, make, model, mileage logic here...
+
+    # -----------------------------
+    # New field: transmission
+    # -----------------------------
+    if re.search(r'\bautomatic\b|\bauto\b', txt):
+        d["transmission"] = "automatic"
+    elif re.search(r'\bmanual\b|\bstick\b|\bstick shift\b', txt):
+        d["transmission"] = "manual"
+    else:
+        d["transmission"] = None
+
+    # -----------------------------
+    # New field: fuel_type
+    # -----------------------------
+    if re.search(r'\bdiesel\b', txt):
+        d["fuel_type"] = "diesel"
+    elif re.search(r'\belectric\b|\bev\b', txt):
+        d["fuel_type"] = "electric"
+    elif re.search(r'\bhybrid\b', txt):
+        d["fuel_type"] = "hybrid"
+    elif re.search(r'\bgas\b|\bgasoline\b', txt):
+        d["fuel_type"] = "gasoline"
+    else:
+        d["fuel_type"] = None
+
+    # -----------------------------
+    # New field: num_doors
+    # -----------------------------
+    door_match = re.search(r'\b(2|3|4|5)[ -]?door\b', txt)
+    if door_match:
+        d["num_doors"] = int(door_match.group(1))
+    else:
+        d["num_doors"] = None
+
+    # -----------------------------
+    # New field: is_truck
+    # -----------------------------
+    if re.search(r'\btruck\b|\bpickup\b|\bf-150\b|\bsilverado\b|\bram 1500\b', txt):
+        d["is_truck"] = True
+    else:
+        d["is_truck"] = False
+
+    return d
 
     # mileage variants
     mi = None
