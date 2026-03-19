@@ -1,3 +1,4 @@
 pandas
-google-cloud-storage
+google-cloud-storage>=2.10.0
+functions-framework>=3.5.0
 flask
