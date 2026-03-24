@@ -5,53 +5,125 @@ import pandas as pd
 from flask import Request
 from google.cloud import storage
 
-BUCKET_NAME = "YOUR_BUCKET_NAME"
-RAW_PREFIX = "raw/"
-OUTPUT_BLOB = "materialized/materialized_v2.csv"
+# Use environment variables instead of hardcoding
+BUCKET_NAME = os.environ.get("BUCKET_NAME", "YOUR_BUCKET_NAME")
+RAW_PREFIX = os.environ.get("RAW_PREFIX", "raw/")
+OUTPUT_BLOB = os.environ.get("OUTPUT_BLOB", "materialized/materialized_v2.csv")
 
 def materialize_v2(request: Request):
-    client = storage.Client()
-    bucket = client.bucket(BUCKET_NAME)
+    try:
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
 
-    blobs = list(client.list_blobs(BUCKET_NAME, prefix=RAW_PREFIX))
+        blobs = list(client.list_blobs(BUCKET_NAME, prefix=RAW_PREFIX))
+        print(f"Found {len(blobs)} blobs under prefix '{RAW_PREFIX}'")
 
-    frames = []
+        frames = []
+        files_read = 0
+        files_skipped = 0
 
-    for blob in blobs:
-        if not blob.name.endswith(".json"):
-            continue
+        for blob in blobs:
+            if not blob.name.endswith(".json"):
+                print(f"Skipping non-JSON file: {blob.name}")
+                continue
 
-        content = blob.download_as_text()
+            try:
+                content = blob.download_as_text()
 
-        try:
-            obj = json.loads(content)
+                if not content.strip():
+                    print(f"Skipping empty file: {blob.name}")
+                    files_skipped += 1
+                    continue
 
-            if isinstance(obj, list):
-                df = pd.DataFrame(obj)
-            else:
-                df = pd.DataFrame([obj])
+                obj = json.loads(content)
 
-            frames.append(df)
+                # Handle either list of records or one record
+                if isinstance(obj, list):
+                    if len(obj) == 0:
+                        print(f"Skipping empty JSON list: {blob.name}")
+                        files_skipped += 1
+                        continue
+                    df = pd.DataFrame(obj)
 
-        except Exception as e:
-            print(f"Skipping {blob.name}: {e}")
-            continue
+                elif isinstance(obj, dict):
+                    df = pd.DataFrame([obj])
 
-    if not frames:
-        return ("No data found", 200)
+                else:
+                    print(f"Skipping unexpected JSON format in {blob.name}")
+                    files_skipped += 1
+                    continue
 
-    # SAFE CONCAT (handles new columns)
-    final_df = pd.concat(frames, ignore_index=True, sort=False)
+                # Optional: only keep files that contain at least one of your new ETL fields
+                new_fields = {"fuel_type", "drivetrain", "transmission", "num_doors", "is_truck"}
+                if not any(col in df.columns for col in new_fields):
+                    print(f"Skipping old-schema file: {blob.name}")
+                    files_skipped += 1
+                    continue
 
-    # Save to temp
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as tmp:
-        final_df.to_csv(tmp.name, index=False)
-        tmp_path = tmp.name
+                frames.append(df)
+                files_read += 1
+                print(f"Loaded {blob.name} with {len(df)} rows")
 
-    # Upload to GCS
-    blob = bucket.blob(OUTPUT_BLOB)
-    blob.upload_from_filename(tmp_path)
+            except Exception as e:
+                print(f"Skipping {blob.name} because of error: {e}")
+                files_skipped += 1
+                continue
 
-    os.remove(tmp_path)
+        if not frames:
+            return ("No valid v2 data found.", 200)
 
+        # Safe concat handles different column sets
+        final_df = pd.concat(frames, ignore_index=True, sort=False)
+
+        # Optional: drop duplicate records if post_id exists
+        if "post_id" in final_df.columns:
+            before = len(final_df)
+            final_df = final_df.drop_duplicates(subset=["post_id"])
+            after = len(final_df)
+            print(f"Dropped {before - after} duplicate rows based on post_id")
+
+        # Optional: reorder columns so CSV looks cleaner
+        preferred_order = [
+            "post_id",
+            "run_id",
+            "scraped_at",
+            "source_txt",
+            "price",
+            "year",
+            "make",
+            "model",
+            "mileage",
+            "fuel_type",
+            "drivetrain",
+            "transmission",
+            "num_doors",
+            "is_truck"
+        ]
+
+        existing_cols = [col for col in preferred_order if col in final_df.columns]
+        other_cols = [col for col in final_df.columns if col not in existing_cols]
+        final_df = final_df[existing_cols + other_cols]
+
+        # Save locally to temporary file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as tmp:
+            final_df.to_csv(tmp.name, index=False)
+            tmp_path = tmp.name
+
+        # Upload CSV to GCS
+        out_blob = bucket.blob(OUTPUT_BLOB)
+        out_blob.upload_from_filename(tmp_path)
+
+        os.remove(tmp_path)
+
+        msg = (
+            f"materialize-v2 complete: {len(final_df)} rows written. "
+            f"Files read: {files_read}. Files skipped: {files_skipped}."
+        )
+        print(msg)
+        return (msg, 200)
+
+    except Exception as e:
+        error_msg = f"materialize-v2 failed: {e}"
+        print(error_msg)
+        return (error_msg, 500)
     return (f"materialize-v2 complete: {len(final_df)} rows", 200)
