@@ -1,0 +1,31 @@
+name: Deploy materialize-v2
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "materialize_v2/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: YOUR_WIF_PROVIDER
+          service_account: YOUR_DEPLOYER_SA@YOUR_PROJECT_ID.iam.gserviceaccount.com
+
+      - name: Deploy materialize-v2
+        uses: google-github-actions/deploy-cloud-functions@v4
+        with:
+          name: materialize-v2
+          runtime: python311
+          region: us-central1
+          source_dir: materialize_v2
+          entry_point: materialize_v2
+          trigger_http: true
