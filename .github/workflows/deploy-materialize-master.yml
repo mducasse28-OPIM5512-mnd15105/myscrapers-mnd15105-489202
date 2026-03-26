@@ -5,8 +5,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'cloud_function/materialize-master/**'
-      - '.github/workflows/deploy-materialize-master.yml'
+      - 'cloud_function/materialize-v2/**'
+      - '.github/workflows/deploy-materialize-v2.yml'
 
 permissions:
   contents: read
