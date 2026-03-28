@@ -1,17 +1,48 @@
 def materialize_v2(request):
+# main.py
+# Build a single, ever-growing CSV from all structured JSONL files.
+# Reads:  gs://<bucket>/<STRUCTURED_PREFIX>/run_id=*/jsonl/*.jsonl
+# Writes: gs://<bucket>/<STRUCTURED_PREFIX>/datasets/listings_master.csv  (atomic publish)
 
-import os
+import csv
+import io
 import json
-import tempfile
-import pandas as pd
-from flask import Request
+import os
+import re
+from datetime import datetime, timezone
+from typing import Dict, Iterable
+
+from flask import Request, jsonify
 from google.cloud import storage
 
-# Use environment variables instead of hardcoding
 # -------------------- ENV --------------------
 BUCKET_NAME        = os.getenv("GCS_BUCKET")                      # REQUIRED
 STRUCTURED_PREFIX  = os.getenv("STRUCTURED_PREFIX", "structured") # e.g., "structured"
 OUTPUT_BLOB = os.environ.get("OUTPUT_BLOB", "materialized/materialized_v2.csv")
+
+storage_client = storage.Client()
+
+# Accept BOTH runIDs:
+RUN_ID_ISO_RE   = re.compile(r"^\d{8}T\d{6}Z$")  # 20251026T170002Z
+RUN_ID_PLAIN_RE = re.compile(r"^\d{14}$")        # 20251026170002
+
+# Stable CSV schema for students
+CSV_COLUMNS = [
+     "post_id",
+            "run_id",
+            "scraped_at",
+            "source_txt",
+            "price",
+            "year",
+            "make",
+            "model",
+            "mileage",
+            "fuel_type",
+            "drivetrain",
+            "transmission",
+            "num_doors",
+            "is_truck" ]
+
 
 def materialize_v2(request: Request):
     try:
@@ -85,23 +116,6 @@ def materialize_v2(request: Request):
             after = len(final_df)
             print(f"Dropped {before - after} duplicate rows based on post_id")
 
-        # Optional: reorder columns so CSV looks cleaner
-        preferred_order = [
-            "post_id",
-            "run_id",
-            "scraped_at",
-            "source_txt",
-            "price",
-            "year",
-            "make",
-            "model",
-            "mileage",
-            "fuel_type",
-            "drivetrain",
-            "transmission",
-            "num_doors",
-            "is_truck"
-        ]
 
         existing_cols = [col for col in preferred_order if col in final_df.columns]
         other_cols = [col for col in final_df.columns if col not in existing_cols]
