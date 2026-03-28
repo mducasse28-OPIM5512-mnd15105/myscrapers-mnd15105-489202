@@ -1,143 +1,114 @@
 def materialize_v2(request):
-# main.py
-# Build a single, ever-growing CSV from all structured JSONL files.
-# Reads:  gs://<bucket>/<STRUCTURED_PREFIX>/run_id=*/jsonl/*.jsonl
-# Writes: gs://<bucket>/<STRUCTURED_PREFIX>/datasets/listings_master.csv  (atomic publish)
+    # main.py
+    # Build a single CSV from all structured JSONL files
 
-import csv
-import io
-import json
-import os
-import re
-from datetime import datetime, timezone
-from typing import Dict, Iterable
+    import csv
+    import json
+    import os
+    import re
+    from datetime import datetime, timezone
+    from flask import jsonify
+    from google.cloud import storage
 
-from flask import Request, jsonify
-from google.cloud import storage
+    # -------------------- ENV --------------------
+    BUCKET_NAME = os.getenv("GCS_BUCKET")
+    STRUCTURED_PREFIX = os.getenv("STRUCTURED_PREFIX", "structured")
 
-# -------------------- ENV --------------------
-BUCKET_NAME        = os.getenv("GCS_BUCKET")                      # REQUIRED
-STRUCTURED_PREFIX  = os.getenv("STRUCTURED_PREFIX", "structured") # e.g., "structured"
-OUTPUT_BLOB = os.environ.get("OUTPUT_BLOB", "materialized/materialized_v2.csv")
+    storage_client = storage.Client()
 
-storage_client = storage.Client()
+    RUN_ID_ISO_RE = re.compile(r"^\d{8}T\d{6}Z$")
+    RUN_ID_PLAIN_RE = re.compile(r"^\d{14}$")
 
-# Accept BOTH runIDs:
-RUN_ID_ISO_RE   = re.compile(r"^\d{8}T\d{6}Z$")  # 20251026T170002Z
-RUN_ID_PLAIN_RE = re.compile(r"^\d{14}$")        # 20251026170002
+    # ✅ YOUR FINAL CSV SCHEMA
+    CSV_COLUMNS = [
+        "post_id",
+        "run_id",
+        "scraped_at",
+        "source_txt",
+        "price",
+        "year",
+        "make",
+        "model",
+        "mileage",
+        "fuel_type",
+        "drivetrain",
+        "transmission",
+        "num_doors",
+        "is_truck"
+    ]
 
-# Stable CSV schema for students
-CSV_COLUMNS = [
-     "post_id",
-            "run_id",
-            "scraped_at",
-            "source_txt",
-            "price",
-            "year",
-            "make",
-            "model",
-            "mileage",
-            "fuel_type",
-            "drivetrain",
-            "transmission",
-            "num_doors",
-            "is_truck" ]
+    # 🔥 PRINT columns (important for logs + screenshot proof)
+    print("Materialize-v2 CSV Columns:")
+    for col in CSV_COLUMNS:
+        print(f" - {col}")
 
+    def _list_run_ids():
+        it = storage_client.list_blobs(BUCKET_NAME, prefix=f"{STRUCTURED_PREFIX}/", delimiter="/")
+        for _ in it:
+            pass
+        run_ids = []
+        for p in getattr(it, "prefixes", []):
+            tail = p.rstrip("/").split("/")[-1]
+            if tail.startswith("run_id="):
+                rid = tail.split("run_id=", 1)[1]
+                if RUN_ID_ISO_RE.match(rid) or RUN_ID_PLAIN_RE.match(rid):
+                    run_ids.append(rid)
+        return sorted(run_ids)
 
-def materialize_v2(request: Request):
-    try:
-        client = storage.Client()
-        bucket = client.bucket(BUCKET_NAME)
-
-        blobs = list(client.list_blobs(BUCKET_NAME, prefix=RAW_PREFIX))
-        print(f"Found {len(blobs)} blobs under prefix '{RAW_PREFIX}'")
-
-        frames = []
-        files_read = 0
-        files_skipped = 0
-
-        for blob in blobs:
-            if not blob.name.endswith(".json"):
-                print(f"Skipping non-JSON file: {blob.name}")
+    def _jsonl_records_for_run(run_id):
+        b = storage_client.bucket(BUCKET_NAME)
+        prefix = f"{STRUCTURED_PREFIX}/run_id={run_id}/jsonl/"
+        for blob in b.list_blobs(prefix=prefix):
+            if not blob.name.endswith(".jsonl"):
                 continue
-
+            data = blob.download_as_text().strip()
+            if not data:
+                continue
             try:
-                content = blob.download_as_text()
-
-                if not content.strip():
-                    print(f"Skipping empty file: {blob.name}")
-                    files_skipped += 1
-                    continue
-
-                obj = json.loads(content)
-
-                # Handle either list of records or one record
-                if isinstance(obj, list):
-                    if len(obj) == 0:
-                        print(f"Skipping empty JSON list: {blob.name}")
-                        files_skipped += 1
-                        continue
-                    df = pd.DataFrame(obj)
-
-                elif isinstance(obj, dict):
-                    df = pd.DataFrame([obj])
-
-                else:
-                    print(f"Skipping unexpected JSON format in {blob.name}")
-                    files_skipped += 1
-                    continue
-
-                # Optional: only keep files that contain at least one of your new ETL fields
-                new_fields = {"fuel_type", "drivetrain", "transmission", "num_doors", "is_truck"}
-                if not any(col in df.columns for col in new_fields):
-                    print(f"Skipping old-schema file: {blob.name}")
-                    files_skipped += 1
-                    continue
-
-                frames.append(df)
-                files_read += 1
-                print(f"Loaded {blob.name} with {len(df)} rows")
-
-            except Exception as e:
-                print(f"Skipping {blob.name} because of error: {e}")
-                files_skipped += 1
+                rec = json.loads(data)
+                rec.setdefault("run_id", run_id)
+                yield rec
+            except:
                 continue
 
-        if not frames:
-            return ("No valid v2 data found.", 200)
+    def _open_writer(dest_key):
+        b = storage_client.bucket(BUCKET_NAME)
+        blob = b.blob(dest_key)
+        return blob.open("w")
 
-        # Safe concat handles different column sets
-        final_df = pd.concat(frames, ignore_index=True, sort=False)
+    # -------------------- BUILD DATA --------------------
+    run_ids = _list_run_ids()
+    print(f"Found {len(run_ids)} run_ids")
 
-        # Optional: drop duplicate records if post_id exists
-        if "post_id" in final_df.columns:
-            before = len(final_df)
-            final_df = final_df.drop_duplicates(subset=["post_id"])
-            after = len(final_df)
-            print(f"Dropped {before - after} duplicate rows based on post_id")
+    all_records = []
+    for rid in run_ids:
+        for rec in _jsonl_records_for_run(rid):
+            all_records.append(rec)
 
+    print(f"Total records collected: {len(all_records)}")
 
-        existing_cols = [col for col in preferred_order if col in final_df.columns]
-        other_cols = [col for col in final_df.columns if col not in existing_cols]
-        final_df = final_df[existing_cols + other_cols]
+    # -------------------- WRITE CSV --------------------
+    dest_key = f"{STRUCTURED_PREFIX}/datasets/listings_master_v2.csv"
 
-        # Save locally to temporary file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as tmp:
-            final_df.to_csv(tmp.name, index=False)
-            tmp_path = tmp.name
+    count = 0
+    with _open_writer(dest_key) as out:
+        writer = csv.DictWriter(out, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
 
-        # Upload CSV to GCS
-        out_blob = bucket.blob(OUTPUT_BLOB)
-        out_blob.upload_from_filename(tmp_path)
+        for rec in all_records:
+            row = {c: rec.get(c, None) for c in CSV_COLUMNS}
+            writer.writerow(row)
+            count += 1
 
-        os.remove(tmp_path)
+    print(f"CSV written with {count} rows → {dest_key}")
 
-        msg = (
-            f"materialize-v2 complete: {len(final_df)} rows written. "
-            f"Files read: {files_read}. Files skipped: {files_skipped}."
-        )
-        print(msg)
-        return (msg, 200)
+    # ✅ RETURN columns for proof
+    return jsonify({
+        "status": "success",
+        "rows_written": count,
+        "csv_path": dest_key,
+        "columns": CSV_COLUMNS
+    })
 
     except Exception as e:
         error_msg = f"materialize-v2 failed: {e}"
