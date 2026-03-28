@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'cloud_function/materialize-v2/**'
+      - 'materialize_v2/**'
       - '.github/workflows/deploy-materialize-v2.yml'
 
 permissions:
@@ -15,9 +15,9 @@ permissions:
 env:
   PROJECT_ID: ${{ vars.PROJECT_ID }}
   REGION: ${{ vars.REGION }}
-  FUNCTION_NAME: materialize-master
-  FUNCTION_DIR: cloud_function/materialize-master
-  ENTRY_POINT: materialize_http
+  FUNCTION_NAME: materialize-v2
+  FUNCTION_DIR: materialize_v2
+  ENTRY_POINT: materialize_v2
   RUNTIME: python312
   BUCKET_NAME: ${{ vars.BUCKET_NAME }}
   TIMEOUT_SECONDS: "900"
