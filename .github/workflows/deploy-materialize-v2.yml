@@ -1,5 +1,7 @@
 name: Deploy materialize-v2 (CF Gen2 + Cloud Scheduler)
 
+def materialize_v2(request):
+
 on:
   workflow_dispatch:
   push:
@@ -48,6 +50,12 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Show repo files
+        run: |
+          pwd
+          ls -la
+          find . -maxdepth 3 -type f
+          
       - name: Verify source
         shell: bash
         run: |
