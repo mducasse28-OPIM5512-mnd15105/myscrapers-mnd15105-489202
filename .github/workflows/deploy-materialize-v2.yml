@@ -1,5 +1,3 @@
-def materialize_v2(request):
-
 name: Deploy materialize-v2 (CF Gen2 + Cloud Scheduler)
 
 on:
