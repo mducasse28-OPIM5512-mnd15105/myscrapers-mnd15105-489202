@@ -253,7 +253,7 @@ def _vertex_extract_fields(raw_text: str) -> dict:
             return None
         s = str(s).strip().lower()
         
-               return s if s else None
+    return s if s else None
 
     parsed["make"] = _norm_str(parsed.get("make"))
     parsed["model"] = _norm_str(parsed.get("model"))
