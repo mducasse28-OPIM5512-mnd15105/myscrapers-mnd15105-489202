@@ -67,6 +67,9 @@ jobs:
           ls -la "${FUNCTION_DIR}"
           test -f "${FUNCTION_DIR}/main.py"
           test -f "${FUNCTION_DIR}/requirements.txt"
+      - name: Show main.py
+        run: |
+          sed -n '1,220p' cloud_function/materialize_v2/main.py
 
       - name: Deploy Cloud Function (Gen2)
         shell: bash
