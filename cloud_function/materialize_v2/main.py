@@ -52,10 +52,13 @@ def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
 def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
     b = storage_client.bucket(bucket)
     prefix = f"{structured_prefix}/run_id={run_id}/jsonl/"
+    print(f"Listing blobs under {prefix}")
 
     for blob in b.list_blobs(prefix=prefix):
         if not blob.name.endswith(".jsonl"):
             continue
+
+        print(f"Reading blob: {blob.name}")
 
         data = blob.download_as_text().strip()
         if not data:
@@ -65,7 +68,8 @@ def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
             rec = json.loads(data)
             rec.setdefault("run_id", run_id)
             yield rec
-        except Exception:
+        except Exception as e:
+            print(f"Skipping bad JSON in {blob.name}: {e}")
             continue
 
 
@@ -93,15 +97,31 @@ def materialize_v2(request: Request):
     if not BUCKET_NAME:
         return jsonify({"error": "GCS_BUCKET environment variable is required"}), 500
 
+    print(f"BUCKET_NAME={BUCKET_NAME}")
+    print(f"STRUCTURED_PREFIX={STRUCTURED_PREFIX}")
+
     run_ids = _list_run_ids(BUCKET_NAME, STRUCTURED_PREFIX)
+    print(f"Found {len(run_ids)} run_ids")
 
     all_records = []
-    for run_id in run_ids:
+    for i, run_id in enumerate(run_ids, start=1):
+        print(f"Processing run_id {i}/{len(run_ids)}: {run_id}")
+
+        n_before = len(all_records)
         for rec in _jsonl_records_for_run(BUCKET_NAME, STRUCTURED_PREFIX, run_id):
             all_records.append(rec)
+        n_after = len(all_records)
+
+        print(f"Added {n_after - n_before} records from {run_id}")
+
+    print(f"Total records collected: {len(all_records)}")
 
     dest_key = f"{STRUCTURED_PREFIX}/datasets/listings_master_v2.csv"
+    print(f"Writing CSV to gs://{BUCKET_NAME}/{dest_key}")
+
     rows_written = _write_csv(all_records, dest_key, CSV_COLUMNS)
+
+    print(f"Done. Rows written: {rows_written}")
 
     return jsonify(
         {
