@@ -252,7 +252,8 @@ def _vertex_extract_fields(raw_text: str) -> dict:
         if s is None:
             return None
         s = str(s).strip().lower()
-        return s if s else None
+        
+               return s if s else None
 
     parsed["make"] = _norm_str(parsed.get("make"))
     parsed["model"] = _norm_str(parsed.get("model"))
@@ -264,11 +265,7 @@ def _vertex_extract_fields(raw_text: str) -> dict:
     parsed["seller_type"] = _norm_lower_str(parsed.get("seller_type"))
     parsed["location_text"] = _norm_str(parsed.get("location_text"))
 
-    return parseddef _vertex_extract_fields(raw_text: str) -> dict:
-    """
-    Ask Gemini to return JSON with exactly: price, year, make, model, mileage.
-    """
-    model = _get_vertex_model()
+    return parsed
 
 
 # -------------------- HTTP ENTRY --------------------
