@@ -8,17 +8,14 @@ from typing import Dict, Iterable
 from flask import Request, jsonify
 from google.cloud import storage
 
-# -------------------- ENV --------------------
 BUCKET_NAME = os.getenv("GCS_BUCKET")
 STRUCTURED_PREFIX = os.getenv("STRUCTURED_PREFIX", "structured")
 
 storage_client = storage.Client()
 
-# Accept BOTH runIDs:
-RUN_ID_ISO_RE = re.compile(r"^\d{8}T\d{6}Z$")   # 20251026T170002Z
-RUN_ID_PLAIN_RE = re.compile(r"^\d{14}$")       # 20251026170002
+RUN_ID_ISO_RE = re.compile(r"^\d{8}T\d{6}Z$")
+RUN_ID_PLAIN_RE = re.compile(r"^\d{14}$")
 
-# Stable CSV schema
 CSV_COLUMNS = [
     "post_id",
     "run_id",
@@ -36,6 +33,8 @@ CSV_COLUMNS = [
     "is_truck",
 ]
 
+def materialize_v2(request):
+    
 def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
     it = storage_client.list_blobs(bucket, prefix=f"{structured_prefix}/", delimiter="/")
     for _ in it:
@@ -51,8 +50,8 @@ def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
 
     return sorted(run_ids)
 
+
 def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
-    """Yield dict records from .jsonl under .../run_id=<run_id>/jsonl/."""
     b = storage_client.bucket(bucket)
     prefix = f"{structured_prefix}/run_id={run_id}/jsonl/"
 
@@ -71,18 +70,12 @@ def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
         except Exception:
             continue
 
-def _run_id_to_dt(rid: str) -> datetime:
-    if RUN_ID_ISO_RE.match(rid):
-        return datetime.strptime(rid, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-    if RUN_ID_PLAIN_RE.match(rid):
-        return datetime.strptime(rid, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc)
 
 def _open_gcs_text_writer(bucket: str, key: str):
-    """Open a text-mode writer to GCS; close() finalizes the upload."""
     b = storage_client.bucket(bucket)
     blob = b.blob(key)
     return blob.open("w")
+
 
 def _write_csv(records: Iterable[Dict], dest_key: str, columns=CSV_COLUMNS) -> int:
     n = 0
@@ -97,23 +90,17 @@ def _write_csv(records: Iterable[Dict], dest_key: str, columns=CSV_COLUMNS) -> i
 
     return n
 
+
 def materialize_v2(request: Request):
     if not BUCKET_NAME:
         return jsonify({"error": "GCS_BUCKET environment variable is required"}), 500
 
-    print("Materialize-v2 CSV columns:")
-    for col in CSV_COLUMNS:
-        print(f" - {col}")
-
     run_ids = _list_run_ids(BUCKET_NAME, STRUCTURED_PREFIX)
-    print(f"Found {len(run_ids)} run_ids")
 
     all_records = []
     for run_id in run_ids:
         for rec in _jsonl_records_for_run(BUCKET_NAME, STRUCTURED_PREFIX, run_id):
             all_records.append(rec)
-
-    print(f"Collected {len(all_records)} records")
 
     dest_key = f"{STRUCTURED_PREFIX}/datasets/listings_master_v2.csv"
     rows_written = _write_csv(all_records, dest_key, CSV_COLUMNS)
@@ -122,5 +109,5 @@ def materialize_v2(request: Request):
         "status": "success",
         "rows_written": rows_written,
         "csv_path": dest_key,
-        "columns": CSV_COLUMNS,
+        "columns": CSV_COLUMNS
     }), 200
