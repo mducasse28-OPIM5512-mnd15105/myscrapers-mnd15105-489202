@@ -2,7 +2,6 @@ import csv
 import json
 import os
 import re
-from datetime import datetime, timezone
 from typing import Dict, Iterable
 
 from flask import Request, jsonify
@@ -33,8 +32,7 @@ CSV_COLUMNS = [
     "is_truck",
 ]
 
-def materialize_v2(request):
-    
+
 def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
     it = storage_client.list_blobs(bucket, prefix=f"{structured_prefix}/", delimiter="/")
     for _ in it:
