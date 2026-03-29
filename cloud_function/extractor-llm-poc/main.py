@@ -156,11 +156,11 @@ def _safe_int(x):
 # -------------------- VERTEX AI CALL --------------------
 def _vertex_extract_fields(raw_text: str) -> dict:
     """
-    Ask Gemini to return JSON with exactly: price, year, make, model, mileage.
+    Ask Gemini to return JSON with the core fields plus richer GenAI fields for A07.
     """
     model = _get_vertex_model()
 
-    # Strict JSON schema - FIX: Removed "additionalProperties": False
+     # Strict JSON schema - FIX: Removed "additionalProperties": False
     schema = {
         "type": "object",
         "properties": {
@@ -169,24 +169,41 @@ def _vertex_extract_fields(raw_text: str) -> dict:
             "make": {"type": "string", "nullable": True},
             "model": {"type": "string", "nullable": True},
             "mileage": {"type": "integer", "nullable": True},
+
+            "body_type": {"type": "string", "nullable": True},
+            "condition": {"type": "string", "nullable": True},
+            "title_status": {"type": "string", "nullable": True},
+            "color": {"type": "string", "nullable": True},
+            "seller_type": {"type": "string", "nullable": True},
+            "location_text": {"type": "string", "nullable": True},
         },
         "required": ["price", "year", "make", "model", "mileage"]
     }
 
-    # System instruction (will be prepended to the prompt)
+     # System instruction (will be prepended to the prompt)
     sys_instr = (
-        "Extract ONLY the following fields from the input text. "
+        "Extract ONLY the requested vehicle listing fields from the input text. "
         "Return a strict JSON object that conforms to the provided schema. "
-        "If a value is not present, use null. "
-        "Rules: integers for price/year/mileage; price in USD; mileage in miles; "
-        "do not infer values not explicitly present; do not add extra keys."
+        "If a value is missing or unclear, use null. "
+        "Do not add extra keys. "
+        "Rules: "
+        "price/year/mileage must be integers; "
+        "price is in USD; mileage is in miles; "
+        "body_type should use a simple normalized label like sedan, coupe, suv, truck, hatchback, wagon, van, convertible, minivan; "
+        "condition should use a simple normalized label like excellent, good, fair, poor, like new, salvage; "
+        "title_status should use a simple normalized label like clean, rebuilt, salvage, lien, missing, unknown; "
+        "seller_type should be dealer or private party when possible; "
+        "color should be the main exterior color; "
+        "location_text should be a short city/state style location if mentioned; "
+        "do not invent values that are not supported by the text."
     )
 
-    # FIX: Combine instruction and text into one prompt string (SDK compatibility)
+     # FIX: Combine instruction and text into one prompt string (SDK compatibility)
     prompt = f"{sys_instr}\n\nTEXT:\n{raw_text}"
 
     gen_cfg = GenerationConfig(
-        # FIX: system_instruction removed to fix TypeError 
+        
+      # FIX: system_instruction removed to fix TypeError 
         temperature=0.0,
         top_p=1.0,
         top_k=40,
@@ -194,13 +211,12 @@ def _vertex_extract_fields(raw_text: str) -> dict:
         response_mime_type="application/json",
         response_schema=schema,
     )
-
-    # --- LLM CALL WITH RETRY ---
+      # --- LLM CALL WITH RETRY ---
     max_attempts = 3
     resp = None
     for attempt in range(max_attempts):
         try:
-            # Pass the single string prompt
+             # Pass the single string prompt
             resp = model.generate_content(prompt, generation_config=gen_cfg)
             break
         except Exception as e:
@@ -208,9 +224,12 @@ def _vertex_extract_fields(raw_text: str) -> dict:
             if not _if_llm_retryable(e) or attempt == max_attempts - 1:
                 logging.error(f"Fatal/non-retryable LLM error or max retries reached: {e}")
                 raise
-            
+
             sleep_time = LLM_RETRY._calculate_sleep(attempt)
-            logging.warning(f"Transient LLM error on attempt {attempt+1}/{max_attempts}. Retrying in {sleep_time:.2f}s...")
+            logging.warning(
+                f"Transient LLM error on attempt {attempt + 1}/{max_attempts}. "
+                f"Retrying in {sleep_time:.2f}s..."
+            )
             time.sleep(sleep_time)
 
     if resp is None:
@@ -222,16 +241,34 @@ def _vertex_extract_fields(raw_text: str) -> dict:
     parsed["price"] = _safe_int(parsed.get("price"))
     parsed["year"] = _safe_int(parsed.get("year"))
     parsed["mileage"] = _safe_int(parsed.get("mileage"))
-    
+
     def _norm_str(s):
-        if s is None: return None
+        if s is None:
+            return None
         s = str(s).strip()
+        return s if s else None
+
+    def _norm_lower_str(s):
+        if s is None:
+            return None
+        s = str(s).strip().lower()
         return s if s else None
 
     parsed["make"] = _norm_str(parsed.get("make"))
     parsed["model"] = _norm_str(parsed.get("model"))
 
-    return parsed
+    parsed["body_type"] = _norm_lower_str(parsed.get("body_type"))
+    parsed["condition"] = _norm_lower_str(parsed.get("condition"))
+    parsed["title_status"] = _norm_lower_str(parsed.get("title_status"))
+    parsed["color"] = _norm_lower_str(parsed.get("color"))
+    parsed["seller_type"] = _norm_lower_str(parsed.get("seller_type"))
+    parsed["location_text"] = _norm_str(parsed.get("location_text"))
+
+    return parseddef _vertex_extract_fields(raw_text: str) -> dict:
+    """
+    Ask Gemini to return JSON with exactly: price, year, make, model, mileage.
+    """
+    model = _get_vertex_model()
 
 
 # -------------------- HTTP ENTRY --------------------
