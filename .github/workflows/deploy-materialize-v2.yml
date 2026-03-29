@@ -30,6 +30,10 @@ env:
   CRON_EXPR: "15 * * * *"   # :15 each hour
 
 jobs:
+      - name: Show main.py with line numbers
+        shell: bash
+        run: |
+          nl -ba cloud_function/materialize_v2/main.py | sed -n '1,140p'
   deploy:
     runs-on: ubuntu-latest
     steps:
