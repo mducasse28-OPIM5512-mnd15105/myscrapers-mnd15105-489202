@@ -109,3 +109,6 @@ def materialize_v2(request):
         "csv_path": dest_key,
         "columns": CSV_COLUMNS
     })
+ except Exception as e:
+        # Return a JSON error so you don't just see a plain 500
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
