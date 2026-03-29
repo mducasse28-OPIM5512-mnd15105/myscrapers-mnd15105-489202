@@ -1,3 +1,2 @@
-pandas
-google-cloud-storage
 flask
+google-cloud-storage
