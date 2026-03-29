@@ -103,9 +103,11 @@ def materialize_v2(request: Request):
     dest_key = f"{STRUCTURED_PREFIX}/datasets/listings_master_v2.csv"
     rows_written = _write_csv(all_records, dest_key, CSV_COLUMNS)
 
-    return jsonify({
-        "status": "success",
-        "rows_written": rows_written,
-        "csv_path": dest_key,
-        "columns": CSV_COLUMNS
-    }), 200
+    return jsonify(
+        {
+            "status": "success",
+            "rows_written": rows_written,
+            "csv_path": dest_key,
+            "columns": CSV_COLUMNS,
+        }
+    ), 200
