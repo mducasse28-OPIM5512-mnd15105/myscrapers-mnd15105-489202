@@ -17,7 +17,7 @@ env:
   REGION: ${{ vars.REGION }}
   FUNCTION_NAME: materialize-v2
   FUNCTION_DIR: cloud_function/materialize_v2
-  ENTRY_POINT: materialize_v2
+  ENTRY_POINT: materialize_http \
   RUNTIME: python312
   BUCKET_NAME: ${{ vars.BUCKET_NAME }}
   STRUCTURED_PREFIX: "structured"
