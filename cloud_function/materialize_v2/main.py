@@ -1,3 +1,9 @@
+# main.py
+# Build a single, ever-growing CSV from all structured JSONL files.
+# Reads:  gs://<bucket>/<STRUCTURED_PREFIX>/run_id=*/jsonl/*.jsonl
+# Writes: gs://<bucket>/<STRUCTURED_PREFIX>/datasets/listings_master.csv  (atomic publish)
+### modified from materialize-master/main.py to implement 3 new fields: transmission, fuel_type, drivetrain
+
 import csv
 import json
 import os
@@ -56,7 +62,7 @@ def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
 
 
 def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
-    """Yield dict records from .jsonl under .../run_id=<run_id>/jsonl/."""
+    """Yield dict records from .jsonl under .../run_id=<run_id>/jsonl/ (one JSON per file)."""
     b = storage_client.bucket(bucket)
     prefix = f"{structured_prefix}/run_id={run_id}/jsonl/"
 
