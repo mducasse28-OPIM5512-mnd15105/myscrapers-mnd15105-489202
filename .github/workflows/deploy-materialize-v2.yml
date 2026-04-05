@@ -15,7 +15,7 @@ permissions:
 env:
   PROJECT_ID: ${{ vars.PROJECT_ID }}
   REGION: ${{ vars.REGION }}
-  FUNCTION_NAME: materialize-v2
+  FUNCTION_NAME: materialize_v2
   FUNCTION_DIR: cloud_function/materialize_v2
   ENTRY_POINT: materialize_v2
   RUNTIME: python312
