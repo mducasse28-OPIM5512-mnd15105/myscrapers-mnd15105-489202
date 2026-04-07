@@ -17,7 +17,7 @@ env:
   REGION: us-central1
 
   FUNCTION_NAME: train-autoML
-  FUNCTION_DIR: my-cloud-functions/train-autoML   #  MY PATH
+  FUNCTION_DIR: cloud_function/train-autoML   #  MY PATH
   ENTRY_POINT: train_autoML_http
 
   RUNTIME: python312
