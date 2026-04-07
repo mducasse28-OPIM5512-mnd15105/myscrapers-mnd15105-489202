@@ -1,0 +1,81 @@
+name: A08 Sync Model Artifacts to Repo
+run-name: "A08 artifact sync for ${{ github.ref_name }} by @${{ github.actor }}"
+
+on:
+  schedule:
+    - cron: '45 * * * *'   # Every hour at :45
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  BUCKET_NAME: ${{ vars.BUCKET_NAME }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+  DEPLOYER_SA: ${{ vars.DEPLOYER_SA }}
+
+  # GCS output from your A08 AutoML pipeline
+  GCS_PREDS_PREFIX: "structured/preds-autoML"
+
+  # 👇 Your repo folder (what your professor will see)
+  OUTPUT_DIR: "results"
+
+jobs:
+  sync_data:
+    runs-on: ubuntu-latest
+
+    steps:
+      # --- 1. CHECKOUT ---
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- 2. AUTH ---
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      # --- 3. COPY DATA FROM GCS ---
+      - name: Sync A08 results from GCS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${{ env.OUTPUT_DIR }}"
+
+          echo "Syncing results from GCS..."
+          gsutil -m rsync -r "gs://${BUCKET_NAME}/${GCS_PREDS_PREFIX}" "${{ env.OUTPUT_DIR }}"
+
+          echo "Files synced successfully."
+
+      # --- 4. COMMIT + PUSH ---
+      - name: Commit and Push Results
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          echo "Staging results folder..."
+          git add "${{ env.OUTPUT_DIR }}"
+
+          if ! git diff --cached --quiet; then
+            git commit -m "🤖 A08 Sync: update model results (predictions, importance, PDPs)"
+            git pull --rebase origin main
+            git push
+            echo "Push completed."
+          else
+            echo "No changes detected."
+          fi
