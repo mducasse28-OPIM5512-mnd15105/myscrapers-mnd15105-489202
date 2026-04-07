@@ -43,6 +43,7 @@ def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
     it = storage_client.list_blobs(bucket, prefix=f"{structured_prefix}/", delimiter="/")
     for _ in it:
         pass
+
     run_ids = []
     for p in getattr(it, "prefixes", []):
         tail = p.rstrip("/").split("/")[-1]
@@ -50,18 +51,23 @@ def _list_run_ids(bucket: str, structured_prefix: str) -> list[str]:
             rid = tail.split("run_id=", 1)[1]
             if RUN_ID_ISO_RE.match(rid) or RUN_ID_PLAIN_RE.match(rid):
                 run_ids.append(rid)
+
     return sorted(run_ids)
 
 def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
     b = storage_client.bucket(bucket)
     prefix = f"{structured_prefix}/run_id={run_id}/jsonl/"
+
     for blob in b.list_blobs(prefix=prefix):
         if not blob.name.endswith(".jsonl"):
             continue
+
         data = blob.download_as_text()
         line = data.strip()
+
         if not line:
             continue
+
         try:
             rec = json.loads(line)
             rec.setdefault("run_id", run_id)
@@ -74,6 +80,7 @@ def _run_id_to_dt(rid: str) -> datetime:
         return datetime.strptime(rid, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
     if RUN_ID_PLAIN_RE.match(rid):
         return datetime.strptime(rid, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+
     return datetime.now(timezone.utc)
 
 def _open_gcs_text_writer(bucket: str, key: str):
@@ -83,13 +90,16 @@ def _open_gcs_text_writer(bucket: str, key: str):
 
 def _write_csv(records: Iterable[Dict], dest_key: str, columns=CSV_COLUMNS) -> int:
     n = 0
+
     with _open_gcs_text_writer(BUCKET_NAME, dest_key) as out:
-        w = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
-        w.writeheader()
+        writer = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+
         for rec in records:
             row = {c: rec.get(c, None) for c in columns}
-            w.writerow(row)
+            writer.writerow(row)
             n += 1
+
     return n
 
 def materialize_http(request: Request):
@@ -100,13 +110,19 @@ def materialize_http(request: Request):
         run_ids = _list_run_ids(BUCKET_NAME, STRUCTURED_PREFIX)
 
         latest_by_post: Dict[str, Dict] = {}
+
         for rid in run_ids:
             for rec in _jsonl_records_for_run(BUCKET_NAME, STRUCTURED_PREFIX, rid):
                 pid = rec.get("post_id")
                 if not pid:
                     continue
+
                 prev = latest_by_post.get(pid)
-                if (prev is None) or (_run_id_to_dt(rec.get("run_id", rid)) > _run_id_to_dt(prev.get("run_id", ""))):
+
+                if (prev is None) or (
+                    _run_id_to_dt(rec.get("run_id", rid)) >
+                    _run_id_to_dt(prev.get("run_id", ""))
+                ):
                     latest_by_post[pid] = rec
 
         final_key = f"{STRUCTURED_PREFIX}/datasets/listings_v2.csv"
@@ -115,7 +131,8 @@ def materialize_http(request: Request):
         return jsonify({
             "ok": True,
             "rows_written": rows,
-            "output": f"gs://{BUCKET_NAME}/{final_key}"
+            "output": f"gs://{BUCKET_NAME}/{final_key}",
+            "columns": CSV_COLUMNS
         }), 200
 
     except Exception as e:
