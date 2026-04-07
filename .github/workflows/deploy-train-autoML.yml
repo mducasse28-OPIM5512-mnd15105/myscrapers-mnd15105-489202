@@ -122,12 +122,26 @@ jobs:
           fi
 
       #  TEST RUN
-      - name: Test function
-        run: |
-          URL="${{ steps.get_url.outputs.url }}"
-          TOKEN=$(gcloud auth print-identity-token)
+      - name: Mint ID token for test
+        id: auth-test
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+          token_format: "id_token"
+          id_token_audience: ${{ steps.get_url.outputs.url }}
+          id_token_include_email: true
 
-          curl -X POST "$URL" \
-            -H "Authorization: Bearer $TOKEN" \
+      - name: Test function
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          URL="${{ steps.get_url.outputs.url }}"
+          TOKEN="${{ steps.auth-test.outputs.id_token }}"
+
+          echo "Calling function..."
+          curl -i -X POST "$URL" \
+            -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"dry_run":false}'
