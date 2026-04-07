@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'my-cloud-functions/train-autoML/**'
+      - 'cloud-functions/train-autoML/**'
       - '.github/workflows/deploy-train-autoML.yml'
 
 permissions:
