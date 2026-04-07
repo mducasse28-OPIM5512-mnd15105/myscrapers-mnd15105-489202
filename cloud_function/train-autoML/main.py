@@ -22,8 +22,6 @@ from sklearn.preprocessing import OneHotEncoder
 from tpot import TPOTRegressor
 
 # ---- ENV ----
-name: Deploy train-autoML (A08 Project)
-
 on:
   workflow_dispatch:
   push:
