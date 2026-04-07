@@ -1,0 +1,133 @@
+name: Deploy train-autoML (A08 Project)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'my-cloud-functions/train-autoML/**'
+      - '.github/workflows/deploy-train-autoML.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  REGION: us-central1
+
+  FUNCTION_NAME: train-autoML
+  FUNCTION_DIR: my-cloud-functions/train-autoML   #  MY PATH
+  ENTRY_POINT: train_autoML_http
+
+  RUNTIME: python312
+  BUCKET_NAME: ${{ vars.BUCKET_NAME }}
+
+  TIMEOUT_SECONDS: "900"
+  MEMORY: "2Gi"
+
+  #  YOUR DATA
+  DATA_KEY: "structured/datasets/listings_master_llm.csv"
+  OUTPUT_PREFIX: "structured/preds-autoML"
+
+  # SERVICE ACCOUNTS
+  RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+  DEPLOYER_SA: ${{ vars.DEPLOYER_SA }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+
+  # SCHEDULER
+  SCHEDULE_BODY: '{"dry_run":false}'   #  ACTUALLY RUN MODEL
+  CRON_EXPR: "20 * * * *"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      #  Auth
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      #  Setup gcloud
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      #  Verify files exist
+      - name: Verify source
+        run: |
+          ls -la "${FUNCTION_DIR}"
+          test -f "${FUNCTION_DIR}/main.py"
+          test -f "${FUNCTION_DIR}/requirements.txt"
+
+      #  Deploy function
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy "${FUNCTION_NAME}" \
+            --gen2 \
+            --region="${REGION}" \
+            --runtime="${RUNTIME}" \
+            --source="${FUNCTION_DIR}" \
+            --entry-point="${ENTRY_POINT}" \
+            --trigger-http \
+            --no-allow-unauthenticated \
+            --timeout="${TIMEOUT_SECONDS}" \
+            --memory="${MEMORY}" \
+            --service-account="${RUNTIME_SA}" \
+            --set-env-vars="PROJECT_ID=${PROJECT_ID},GCS_BUCKET=${BUCKET_NAME},DATA_KEY=${DATA_KEY},OUTPUT_PREFIX=${OUTPUT_PREFIX}"
+
+      #  Get URL
+      - name: Get function URL
+        id: get_url
+        run: |
+          URL=$(gcloud functions describe "${FUNCTION_NAME}" \
+            --gen2 \
+            --region="${REGION}" \
+            --format="value(serviceConfig.uri)")
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Function URL: $URL"
+
+      #  Scheduler
+      - name: Create/Update Scheduler Job
+        run: |
+          JOB_NAME="${FUNCTION_NAME}-hourly"
+          URL="${{ steps.get_url.outputs.url }}"
+
+          if gcloud scheduler jobs describe "$JOB_NAME" --location="${REGION}" >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB_NAME" \
+              --location="${REGION}" \
+              --schedule="${CRON_EXPR}" \
+              --time-zone="America/New_York" \
+              --uri="$URL" \
+              --http-method=POST \
+              --message-body='${{ env.SCHEDULE_BODY }}' \
+              --oidc-service-account-email="${RUNTIME_SA}" \
+              --oidc-token-audience="$URL"
+          else
+            gcloud scheduler jobs create http "$JOB_NAME" \
+              --location="${REGION}" \
+              --schedule="${CRON_EXPR}" \
+              --time-zone="America/New_York" \
+              --uri="$URL" \
+              --http-method=POST \
+              --message-body='${{ env.SCHEDULE_BODY }}' \
+              --oidc-service-account-email="${RUNTIME_SA}" \
+              --oidc-token-audience="$URL"
+          fi
+
+      #  TEST RUN
+      - name: Test function
+        run: |
+          URL="${{ steps.get_url.outputs.url }}"
+          TOKEN=$(gcloud auth print-identity-token)
+
+          curl -X POST "$URL" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"dry_run":false}'
