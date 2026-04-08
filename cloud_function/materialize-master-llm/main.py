@@ -76,21 +76,28 @@ def _jsonl_records_for_run(bucket: str, structured_prefix: str, run_id: str):
     b = storage_client.bucket(bucket)
     prefix = f"{structured_prefix}/run_id={run_id}/jsonl_llm/"
 
-    for blob in b.list_blobs(prefix=prefix):
+    blobs = list(b.list_blobs(prefix=prefix))
+    print(f"Checking prefix: {prefix} | blobs found: {len(blobs)}")
+
+    for blob in blobs:
         if not blob.name.endswith(".jsonl"):
             continue
 
+        print(f"Reading blob: {blob.name}")
         data = blob.download_as_text()
-        line = data.strip()
-        if not line:
-            continue
 
-        try:
-            rec = json.loads(line)
-            rec.setdefault("run_id", run_id)
-            yield rec
-        except Exception:
-            continue
+        for i, line in enumerate(data.splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                rec = json.loads(line)
+                rec.setdefault("run_id", run_id)
+                yield rec
+            except Exception as e:
+                print(f"JSON parse error in {blob.name} line {i}: {e}")
+            
 
 def _run_id_to_dt(rid: str) -> datetime:
     if RUN_ID_ISO_RE.match(rid):
