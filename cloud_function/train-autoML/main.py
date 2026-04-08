@@ -1,27 +1,7 @@
 # train-autoML/main.py
 
-import os
-import io
-import json
-import logging
-import time
-import traceback
+name: Deploy train-autoML (A08 Project)
 
-import joblib
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
-from google.cloud import storage
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-from sklearn.inspection import permutation_importance, PartialDependenceDisplay
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
-from tpot import TPOTRegressor
-
-# ---- ENV ----
 on:
   workflow_dispatch:
   push:
@@ -39,7 +19,7 @@ env:
   REGION: us-central1
 
   FUNCTION_NAME: train-autoML
-  FUNCTION_DIR: cloud-functions/train-autoML
+  FUNCTION_DIR: my-cloud-functions/train-autoML
   ENTRY_POINT: train_autoML_http
 
   RUNTIME: python312
@@ -83,9 +63,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "Checking function directory..."
+          pwd
+          ls -la
           ls -la "${FUNCTION_DIR}"
           test -f "${FUNCTION_DIR}/main.py"
           test -f "${FUNCTION_DIR}/requirements.txt"
+
+      - name: Show main.py first 80 lines
+        shell: bash
+        run: |
+          set -euo pipefail
+          nl -ba "${FUNCTION_DIR}/main.py" | sed -n '1,80p'
 
       - name: Deploy Cloud Function
         shell: bash
@@ -141,31 +130,11 @@ jobs:
             --format="value(config.name)" | grep -q cloudscheduler.googleapis.com \
             || gcloud services enable cloudscheduler.googleapis.com
 
-      - name: Bootstrap IAM for Scheduler OIDC
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${RUNTIME_SA:-}" ]]; then
-            echo "::error::RUNTIME_SA is not set."
-            exit 1
-          fi
-
-          PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
-          SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
-
-          gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
-            --member="serviceAccount:${SCHED_AGENT}" \
-            --role="roles/iam.serviceAccountTokenCreator" || true
-
-          gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
-            --member="serviceAccount:${DEPLOYER_SA}" \
-            --role="roles/iam.serviceAccountUser" || true
-
       - name: Create or update Scheduler job
         shell: bash
         run: |
           set -euo pipefail
+
           JOB_NAME="${FUNCTION_NAME}-hourly"
           URL="${{ steps.get_url.outputs.url }}"
 
@@ -177,7 +146,6 @@ jobs:
               --uri="$URL" \
               --http-method=POST \
               --message-body='${{ env.SCHEDULE_BODY }}' \
-              --attempt-deadline="${TIMEOUT_SECONDS}s" \
               --oidc-service-account-email="${RUNTIME_SA}" \
               --oidc-token-audience="$URL"
           else
@@ -188,7 +156,6 @@ jobs:
               --uri="$URL" \
               --http-method=POST \
               --message-body='${{ env.SCHEDULE_BODY }}' \
-              --attempt-deadline="${TIMEOUT_SECONDS}s" \
               --oidc-service-account-email="${RUNTIME_SA}" \
               --oidc-token-audience="$URL"
           fi
