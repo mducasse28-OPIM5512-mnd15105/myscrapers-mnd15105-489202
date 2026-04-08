@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'my-cloud_function/materialize-v2*'
+      - 'my-cloud-functions/materialize_v2/**'
       - '.github/workflows/deploy-materialize-v2.yml'
 
 permissions:
@@ -16,7 +16,7 @@ env:
   PROJECT_ID: ${{ vars.PROJECT_ID }}
   REGION: ${{ vars.REGION }}
   FUNCTION_NAME: materialize-v2
-  FUNCTION_DIR: my-cloud_function/materialize-v2
+  FUNCTION_DIR: my-cloud-functions/materialize_v2
   ENTRY_POINT: materialize_http
   RUNTIME: python312
   BUCKET_NAME: ${{ vars.BUCKET_NAME }}
@@ -27,7 +27,7 @@ env:
   DEPLOYER_SA: ${{ vars.DEPLOYER_SA }}
   WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
   SCHEDULE_BODY: ${{ vars.MATERIALIZE_BODY || '{}' }}
-  CRON_EXPR: "15 * * * *"   # :15 each hour
+  CRON_EXPR: "15 * * * *"
 
 jobs:
   deploy:
@@ -52,6 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "FUNCTION_DIR=${FUNCTION_DIR}"
           ls -la "${FUNCTION_DIR}"
           test -f "${FUNCTION_DIR}/main.py"
           test -f "${FUNCTION_DIR}/requirements.txt"
@@ -86,6 +87,7 @@ jobs:
           gcloud functions add-invoker-policy-binding "${FUNCTION_NAME}" \
             --gen2 --region "${REGION}" \
             --member="serviceAccount:${DEPLOYER_SA}"
+
           if [[ -n "${RUNTIME_SA:-}" ]]; then
             gcloud functions add-invoker-policy-binding "${FUNCTION_NAME}" \
               --gen2 --region "${REGION}" \
@@ -121,21 +123,17 @@ jobs:
           SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
           echo "Scheduler agent: ${SCHED_AGENT}"
 
-          # 1) Scheduler may mint OIDC tokens as the runtime SA
           if ! gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
             --member="serviceAccount:${SCHED_AGENT}" \
             --role="roles/iam.serviceAccountTokenCreator"; then
-            echo "::error::Permission denied adding tokenCreator to ${RUNTIME_SA}. Run (once as project owner):"
-            echo "gcloud iam service-accounts add-iam-policy-binding \"${RUNTIME_SA}\" --member=\"serviceAccount:${SCHED_AGENT}\" --role=\"roles/iam.serviceAccountTokenCreator\""
+            echo "::error::Permission denied adding tokenCreator to ${RUNTIME_SA}."
             exit 1
           fi
 
-          # 2) Deployer may 'actAs' the runtime SA to create/update the job
           if ! gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
             --member="serviceAccount:${DEPLOYER_SA}" \
             --role="roles/iam.serviceAccountUser"; then
-            echo "::error::Permission denied adding ServiceAccountUser for ${DEPLOYER_SA} on ${RUNTIME_SA}. Run:"
-            echo "gcloud iam service-accounts add-iam-policy-binding \"${RUNTIME_SA}\" --member=\"serviceAccount:${DEPLOYER_SA}\" --role=\"roles/iam.serviceAccountUser\""
+            echo "::error::Permission denied adding ServiceAccountUser for ${DEPLOYER_SA} on ${RUNTIME_SA}."
             exit 1
           fi
 
@@ -171,7 +169,6 @@ jobs:
               --oidc-token-audience="${URL}"
           fi
 
-      # Mint an ID token via the Auth action (no TokenCreator needed)
       - name: Mint ID token for smoke
         id: auth-smoke
         uses: google-github-actions/auth@v2
